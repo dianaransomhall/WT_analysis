@@ -1,0 +1,196 @@
+\documentclass{article}
+\usepackage{mathpazo}
+\renewcommand{\sfdefault}{lmss}
+\renewcommand{\ttdefault}{lmtt}
+\usepackage[T1]{fontenc}
+\usepackage[a4paper,left=2cm,right=4cm,top=2cm,bottom=2cm]{geometry}
+\usepackage{setspace}
+\usepackage{listings}
+\usepackage{verbatim}
+\usepackage{graphicx}
+
+\usepackage{xspace,amsmath}
+\newcommand{\um}{\ensuremath{\mu \text{m}}\xspace}
+\usepackage{url}
+\usepackage[authoryear]{natbib}
+\newcommand{\dynamic}{(Dynamic)}
+\newcommand{\static}{(Static)}
+\newcommand{\hdfgroup}[1]{\texttt{#1}}
+
+\begin{document}
+\bibliographystyle{plain}
+\onehalfspacing
+\title{Classification Using New Features}
+
+\author{Diana Hall}
+\date{\today}
+
+\maketitle
+
+% * is used to remove the default numbering of sections
+\section*{Model}
+We want to understand which features, or combination thereof, are the most reliable across WT. Simiarly, we seek to understand which set of features is most reliable different in a single strain. A strain is a breeding mouse line, some of which have a mutation of interest others of which are considered wild type.  These first set of experiments were collected by 
+\begin{itemize}
+\item how well can be wt vs mutant be classified?
+\end{itemize}
+
+<<setup, include=FALSE, cache=FALSE, echo=F>>=
+library(knitr)
+# set global chunk options
+opts_chunk$set(fig.path='figure/minimal-', fig.align='center', fig.show='hold')
+options(replace.assign=TRUE,width=90)
+@
+  
+  
+<<install-github,eval=FALSE,echo=F,include=TRUE>>=
+
+
+# attach packages to current session
+require(meaRtools)
+library(xtable)
+library(parallel)
+require(meadq)
+library(tree)
+library(randomForest)
+library(gbm)
+library(e1071)
+library(modeest)
+library(FactoMineR)
+@ 
+  
+
+<<directories and filenames,eval=T,echo=F,include=FALSE>>=
+
+#source(paste(root.dir,"HistoricOntogenyAnalysis/Analysis/classification_functions/classification_functions.R",sep=""))
+# analyse DIV25, DIV27, and DIV29 to start
+#num.cores<-1 #changed from 4
+data.dir<-"/Users/dh2744/Dropbox/Columbia/Software/github/WT_analysis/PCA_KCNT1_Data"
+list.data.dirs<-list.dirs(data.dir)
+dirs.want<-list.data.dirs[ grep("outputPerDIV", list.data.dirs ) ]
+for (i in 1:length(dirs.want) ){
+  # i=1
+  cur.files<-list.files(dirs.want[i], full.names = T)
+  which.want<-as.vector( sapply(c("DIV25", "DIV27", "DIV29"),  grep , cur.files ) )
+  files.want<-cur.files[which.want]
+  files.want<-files.want [grep("csv", files.want ) ]
+  
+  
+}
+
+# read in and make big thing out of files
+i=1
+data.ns<-c()
+data.burst<-c()
+data.spikes<-c()
+for (i in 1:length(files.want)){
+  cur.file<-files.want[i]
+  if( grepl( "DIV25",cur.file) ){
+    cur.div<-25
+  } else if ( grepl( "DIV27",cur.file) ){
+    cur.div<-27
+  } else if (grepl( "DIV29",cur.file)) {
+    cur.div<-29
+  }
+  
+  if (  grepl("spikes", cur.file )  ){
+    t.spikes<-read.csv(files.want[i], skip=3, header=T, nrows=48)
+    t.spikes<-cbind.data.frame(DIV=rep(cur.div, dim(t.spikes)[1] ), t.spikes )
+    data.spikes<-rbind.data.frame(data.spikes, t.spikes  )
+    
+  } else if( grepl("bursts", cur.file ) ) {
+    t.bursts<-read.csv(files.want[i], skip=5, header=T, nrows=48 )
+    t.bursts<-cbind.data.frame(DIV=rep(cur.div, dim(t.bursts)[1] ), t.bursts )
+    data.burst<-rbind.data.frame(data.burst, t.bursts  )
+    
+  } else if (grepl("ns", cur.file )){
+    t.ns<-read.csv(files.want[i], skip=5, header=T, nrows=48 )
+    t.ns<-cbind.data.frame(DIV=rep(cur.div, dim(t.ns )[1] ), t.ns )
+    data.ns<-rbind.data.frame(data.ns, t.ns  )
+    
+  }
+  
+}
+
+colnames(data.spikes)[2]<-"well"
+
+cols.want.ns<-c("DIV", 
+                "peak.m","percent.of.spikes.in.ns", "well", "mean.insis","treatment")
+cols.want.burst<-c("DIV", "treatment","well","mean.freq.in.burst","cv.IBIs","sd.ISIs")
+cols.want.spikes<-c("DIV", "treatment","well","meanfiringrate_by_active_electordes")
+all.cols<-union( union(cols.want.ns, cols.want.burst), cols.want.spikes  )
+
+data.ns.1<-data.ns[, is.element( colnames(data.ns),cols.want.ns ) ]
+data.burst.1<-data.burst[, is.element( colnames(data.burst),cols.want.burst ) ]
+data.spikes.1<-data.spikes[, is.element( colnames(data.spikes),cols.want.spikes ) ]
+
+all.data<-cbind.data.frame(data.burst.1, data.ns.1, data.spikes.1 )
+all.data<-all.data[,all.cols]
+
+#subet the data
+all.data<-all.data[ is.element(all.data$treatment, c("WT","HOM")),  ]
+
+
+
+
+@   
+  
+\section*{PCA of WT Only}
+<<pca1, eval=T, echo=F, include=T >>=
+# first only with WT
+all.data.wt<-all.data[ is.element(all.data$treatment, c("WT")),  ]
+
+#
+quali.sup.vars<-which( is.element( colnames(all.data.wt), c( "treatment", "well") ) )
+div.col<-which( colnames(all.data.wt)=="DIV") 
+all.data.wt<-all.data.wt[,-quali.sup.vars]
+
+col<-rep("blue", length(all.data$treatment))
+
+
+res1<-PCA( all.data.wt, quali=div.col,  graph=F)
+plot( res1, choix="ind", label="none",
+      habillage=1  ,invisible="quali" )
+
+
+
+
+@
+
+
+<<pca12, eval=T, echo=F, include=T >>=
+
+#DIV, 
+quali.sup.vars<-c(1,4,6)
+all.data<-all.data[,-c(1,4)]
+
+col<-rep("blue", length(all.data$treatment))
+col[ grepl( "HOM", all.data$treatment ) ]="red"
+
+res1<-PCA( all.data, quali=4,  graph=F)
+plot( res1, choix="ind", label="none",
+      habillage=4  ,invisible="quali" )
+#plot( res1, choix="ind", label="none", habillage="ind"  ,invisible="quali" , col.hab = col )
+
+
+combo3<-t( combn( setdiff(1:ncol(all.data.quant),quali.sup.vars) , 
+                 3, FUN = NULL, simplify = TRUE) )
+
+for ( i in 1:nrow(combo3) ){
+  cur.data<-all.data[,c( combo3[i, ], 4) ]
+  res1<-PCA( cur.data, quali=4,  graph=F)
+  plot( res1, choix="ind", label="none",
+      habillage=4  ,invisible="quali" )
+
+}
+
+
+
+
+
+@
+
+
+
+
+
+\end{document}
