@@ -1,0 +1,338 @@
+\documentclass{article}
+\usepackage{mathpazo}
+\renewcommand{\sfdefault}{lmss}
+\renewcommand{\ttdefault}{lmtt}
+\usepackage[T1]{fontenc}
+\usepackage[a4paper,left=2cm,right=4cm,top=2cm,bottom=2cm]{geometry}
+\usepackage{setspace}
+\usepackage{listings}
+\usepackage{verbatim}
+\usepackage{graphicx}
+
+\usepackage{xspace,amsmath}
+\newcommand{\um}{\ensuremath{\mu \text{m}}\xspace}
+\usepackage{url}
+\usepackage[authoryear]{natbib}
+\newcommand{\dynamic}{(Dynamic)}
+\newcommand{\static}{(Static)}
+\newcommand{\hdfgroup}[1]{\texttt{#1}}
+
+\begin{document}
+\bibliographystyle{plain}
+\onehalfspacing
+\title{Machine Learning Methods Applied to Micro-Electrode Array Data }
+
+\author{Diana Hall, M.S. Statistics }
+\author{Institute of Genomic Medicine, Columbia University, New York, NY, USA }
+\date{\today}
+
+\maketitle
+
+% * is used to remove the default numbering of sections
+\section*{Abstract}
+We want to understand which features, or combination thereof, are the most stable across WT lines between different plates.. Simiarly, we seek to understand which set of features are the most distinct between WT and control. A strain is a breeding mouse line, some of which have a mutation of interest others of which are considered wild type.  The data is interrogated to answer the following questions. 
+\begin{itemize}
+\item Which combination of 3 features are the most?
+\item how well can be wt vs mutant be classified?
+\end{itemize}
+
+\section{ Introduction }
+Microelectrode array (MEA) recordings are a useful tool to study the activity of networks of interconnected neurons, both in vitro and in vivo. In vitro, neural networks on MEAs demonstrate many characteristics of intact neural networks; this includes extracellular recordings of action potentials (“spikes”) and groups of action potentials (“bursts”) simultaneously from multiple points in the network.1 The spontaneous activity in these networks exhibits pharmacological responsiveness and plasticity. Thus, primary cultures of neural networks on MEAs have been widely utilized to study neurophysiology, neuropharmacology, and neurotoxicology REFERNCE NEEDED(for review, see Johnstone et). 
+
+While the data used in this study is not new, the unique contribution made by this approach to analysis will be in discovering which combination of features extracted from MEA recordings have the least variance culture to culture. Additionally, the analysis method will uncover which featuer combination are most different between the mutant and wild-type.  Previously, MEA data has been tracked over time for differences in individual features. There are been relatively little work on combinations of features.
+
+
+\section*{Data}
+The data was collected on a micro-electrode array (MEA) REFERENCE TO MEA. The data was collected by by Chris Bostick, Ph.D. at the Institute of Genomic Medicine at Columbia University. The strain Black 6 NJ mice. They were bred so that some would be heterozygous for a mutation in the KCNT1 gene. The data has been recorded and prepared only by Chris Bostick, so it's unlikely to contain multiple A total of 72 MEA wells of cultured coritical neurons recorded over 3 different days, across 3 different plates (DIV) will be used. 36 of these wells contain are comprised of neuronal cultures from wild-type mice, while the remaining 36 wells contain cultures from mice homozygous for a mutation in KCNT1. Each well is comprised of data from 16 individual electrodes that collected spike times, to the mili-second, from neurons that overlay them in the culture. Each electrode spike times can be organized to extract various features from the spikes times that include aspects of rate, clumping, synchronozation across electrodes within one well and organization.  The features used will be nAE (no active electrodes), mFR (mean firing rate), mISI (mean Inter-Spike interval), sdISI (st dev of Inter-Spike interval), mDB (mean duration of bursts), bpm (burst per minute), cvIBI (coefficient of variation for inter burst interval), mFB (mean frequency in burst), sdFB (st dev frequency in burst), mSPB (mean spikes per burst), mIBI (mean inter burst interval), pm (peak mean), mNBT (mean network burst time), SPB (spikes per burst), pSIB (percent spikes in bursts), and number of bursts.
+
+
+\section{Proposed Methods}
+The methods used to determine subsets of variables most robust to inter-plate variability and best at discriminating WT from mutatn are the following.  A PCA is chosen for it's familiarity with readers, however this data would perhaps be better suited to ICA, as different features share information. For the data set containing only WT wells, we will run a PCA on each unique subsets of 5 features. Then using a clustering algrothm will be run to determine, for each plate, the average distance between cluster of wells in plate and center of cluster projected onto the plane of PC1 and PC2. For each plate, the average distance to cluster center will be compared to distance to the cluster centers of other plates. A table will be created. For the second data set comprised of both WT and mutant wells, a PCA will be run on all unique combinations of 5 features. Subsequently, a clustering algorithm will be used to determine the average distance between WT wells and their cluster center, as well as mutant wells and their cluster center. Then, the average distance between points and opposite cluster center will be performed. A table will be made and those wells with greatest difference between distance between clusters will be chosen. A final table will be made. Each row will be a separate unique subset of 5 features and columns will be difference between average distance between points within cluster to cluster center and points to opposite cluster centers. The subset that has the best ability to discriminate WT from mutant and is not also good at differentiating between plates will be the best.
+
+
+
+\section{Evaluation Strategy}
+In order to evaluate how good the subset chosen is, a test (25 percent of data) and training set (75 percent of data) will be used. The accuracy of prediction of these 5 features will be evaluated. 
+
+
+\section{Preliminary Results}
+Describe what you found from running your preliminary analysis. Describe the figures and tables that you generated. Do not interpret the results in this section, simply report on the facts.
+
+
+
+<<setup, include=FALSE, cache=FALSE, echo=F>>=
+library(knitr)
+# set global chunk options
+opts_chunk$set(fig.path='figure/minimal-', fig.align='center', fig.show='hold')
+options(replace.assign=TRUE,width=90)
+@
+  
+  
+<<install-github,eval=T,echo=F,include=TRUE>>=
+
+# attach packages to current session
+require(meaRtools)
+library(FactoMineR)
+library(reshape2)
+
+@ 
+  
+
+<<directories and filenames,eval=T,echo=F,include=FALSE>>=
+
+#source(paste(root.dir,"HistoricOntogenyAnalysis/Analysis/classification_functions/classification_functions.R",sep=""))
+# analyse DIV25, DIV27, and DIV29 to start
+#num.cores<-1 #changed from 4
+data.dir<-"/Users/dh2744/Dropbox/Columbia/Software/github/WT_analysis/PCA_KCNT1_Data"
+list.data.dirs<-list.dirs(data.dir)
+dirs.want<-list.data.dirs[ grep("outputPerDIV", list.data.dirs ) ]
+# read in files for all but nb
+
+files.want<-c()
+for (i in 1:length(dirs.want) ){
+  # i=1
+  cur.files<-list.files(dirs.want[i], full.names = T)
+  which.want<-as.vector( sapply(c("DIV25", "DIV27", "DIV29"),  grep , cur.files ) )
+  files.want.temp<-cur.files[which.want]
+  files.want.temp<-files.want.temp [grep("csv", files.want.temp ) ]
+  files.want<-c(files.want, files.want.temp)
+  
+}
+
+# read in files for nb
+dirs.want.nb<-list.data.dirs[ grep("nb", list.data.dirs ) ]
+files.want.nb<-c()
+for (i in 1:length( dirs.want.nb ) ){
+  # i=1
+  cur.files<-list.files(dirs.want.nb[i], full.names = T)
+  which.want<-as.vector( sapply(c("percent.of.spikes.in.NBs_50",
+                                  "spike.intensity_50",
+                                  "mean.NB.time.per.sec_50"),  grep , cur.files ) )
+  
+  files.want.nb.temp<-cur.files[which.want]
+  files.want.nb<-c(files.want.nb, files.want.nb.temp )
+
+}
+
+# read in nb files
+
+last.plate<-c()
+all.plate.data.nb<-c()
+all.plates<-unique( sapply(files.want.nb, function(x){
+  paste(unlist(strsplit(basename(x), split="_", fixed=T))[1:2], collapse="_")
+  }) )
+#go through every plate
+for (j in 1:length(all.plates) ){
+  # j=1
+   cur.plate<-all.plates[j]
+   plates.want<-files.want.nb [ grepl(cur.plate, files.want.nb ) ]
+   
+   data.nb<-c()
+   # go through all data of those plates
+   for ( i in 1:length(plates.want) ){
+    cur.file<-plates.want[i]
+    cur.var<-tail( unlist( strsplit(basename(cur.file), split="_", fixed=T ) ), n=2)[1]
+    t.nb<-read.csv( files.want.nb[i],  header=T, nrows=48)
+    t.nb<-t.nb[ , c("well","treatment","DIV25","DIV27","DIV29") ]
+    t.nb.2<-melt(t.nb, 1:2, value.name=cur.var)
+    colnames(t.nb.2)[colnames(t.nb.2)=="variable"]="DIV"
+    
+    # if data belongs to same plate then make one data frame else stack rows
+    t.nb.2<-cbind.data.frame(t.nb.2, 
+                             plate=rep(cur.plate, dim(t.nb.2)[1]) )
+
+    if (i==1){
+      data.nb<-t.nb.2
+    } else {
+      data.nb<-cbind.data.frame(data.nb, t.nb.2)
+    }
+
+    last.plate=cur.plate
+   }
+   
+   all.plate.data.nb<-rbind.data.frame(all.plate.data.nb, data.nb)
+} # end of for loop
+
+all.plate.data.nb<-all.plate.data.nb[,c(1,2,3,4,5,9,14)]
+# check even representation in of plates in wells
+table(all.plate.data.nb$plate, all.plate.data.nb$well)
+
+
+
+# read in and make big thing out of files
+i=1
+data.ns<-c()
+data.burst<-c()
+data.spikes<-c()
+for (i in 1:length( files.want )){
+  cur.file<-files.want[i]
+  if( grepl( "DIV25",cur.file) ){
+    cur.div<-25
+  } else if ( grepl( "DIV27",cur.file) ){
+    cur.div<-27
+  } else if (grepl( "DIV29",cur.file)) {
+    cur.div<-29
+  }
+  cur.plate<-paste(unlist(strsplit(basename(cur.file), split="_", fixed=T))[1:2], collapse="_")
+  
+  if (  grepl("spikes", cur.file )  ){
+    t.spikes<-read.csv(files.want[i], skip=3, header=T, nrows=48, stringsAsFactors = F )
+    t.spikes<-cbind.data.frame(DIV=rep(cur.div, dim(t.spikes)[1] ), t.spikes, 
+                               plate=rep(cur.plate, dim(t.spikes)[1] )  )
+    data.spikes<-rbind.data.frame(data.spikes, t.spikes )
+    
+  } else if( grepl("bursts", cur.file ) ) {
+    t.bursts<-read.csv(files.want[i], skip=5, header=T, nrows=48, stringsAsFactors = F  )
+    t.bursts<-cbind.data.frame(DIV=rep(cur.div, dim(t.bursts)[1] ), t.bursts, 
+                               plate=rep(cur.plate, dim(t.spikes)[1] ))
+    data.burst<-rbind.data.frame(data.burst, t.bursts  )
+    
+  } else if (grepl("ns", cur.file )){
+    t.ns<-read.csv(files.want[i], skip=5, header=T, nrows=48, stringsAsFactors = F )
+    t.ns<-cbind.data.frame(DIV=rep(cur.div, dim(t.ns )[1] ), t.ns, 
+                           plate=rep(cur.plate, dim(t.spikes)[1] ) )
+    data.ns<-rbind.data.frame(data.ns, t.ns  )
+    
+  }
+  
+}
+
+
+
+if (any(colnames(data.spikes)=="X") ){
+  colnames(data.spikes)[colnames(data.spikes)=="X" ]<-"well"
+}
+
+
+
+cols.want.ns<-c("DIV", "well","plate", "treatment", "peak.m","percent.of.spikes.in.ns",  "mean.insis")
+cols.want.burst<-c("DIV", "well","plate", "treatment",  "mean.freq.in.burst","cv.IBIs","sd.ISIs", 
+                   "mean.ISIs",  "mean.dur", "bursts.per.min", 
+                   "sd.freq.in.burst", "mean.IBIs", "per.spikes.in.burst")
+cols.want.spikes<-c("DIV","well", "plate","treatment",
+                    "nAE", "meanfiringrate_by_active_electordes")
+cols.want.nb<-c("DIV","well", "plate", "treatment", "percent.of.spikes.in.NBs", 
+                "spike.intensity","mean.NB.time.per.sec" )
+
+all.cols<-union( union( union(cols.want.ns, cols.want.burst), cols.want.spikes  ), cols.want.nb)
+
+# change column order of data
+data.ns<-data.ns[, cols.want.ns ]
+data.burst<-data.burst[, cols.want.burst ]
+data.spikes<-data.spikes[,cols.want.spikes ]
+all.plate.data.nb<-all.plate.data.nb[,cols.want.nb]
+
+# joining variables
+join.ns<-paste(data.ns[,1],data.ns[,2],data.ns[,3], sep ="_")
+join.burst<-paste(data.burst[,1],data.burst[,2], data.burst[,3], sep ="_")
+
+data.ns<-paste(data.ns[,1],data.ns[,2],data.ns[,3], sep ="_")
+
+# all.data.check<-cbind.data.frame(data.burst.1, data.ns.1, data.spikes.1, all.plate.data.nb )
+all.data.check<-merge(data.burst.1, data.ns.1, 
+                      by=c(1,2,3)   )
+all.data.check<-merge(data.burst.1, data.ns.1, data.spikes.1, all.plate.data.nb, 
+                      by=c(1,2,3,4)   )
+all.data.check$well
+all.data<-all.data[,all.cols]
+
+#subet the data
+all.data<-all.data[ is.element(all.data$treatment, c("WT","HOM")),  ]
+
+#check data
+temp<-paste(all.data$plate, all.data$well, all.data$DIV, sep="_")
+
+
+
+@   
+  
+
+<<pca1, eval=T, echo=F, include=T, message=F, warning=F >>=
+# first only with WT
+all.data.wt<-all.data[ is.element(all.data$treatment, c("WT")),  ]
+all.data.wt[,"DIV"]=as.factor(all.data.wt[,"DIV"])
+all.data.wt[,"plate"]=as.factor(all.data.wt[,"plate"])
+
+#
+quali.sup.vars<-which( is.element( colnames(all.data.wt), c( "treatment", "well", "DIV") ) )
+all.data.wt<-all.data.wt[,-quali.sup.vars]
+
+quali.col<-which( colnames(all.data.wt)== "plate" ) 
+
+
+#col<-rep("black", length(all.data.wt[,"plate"] ))
+#col[ levels(all.data.wt$plate)[2]==all.data.wt[,"plate"] ]="red"
+#col[ levels(all.data.wt$plate)[3]==all.data.wt[,"plate"] ]="green"
+#col[ levels(all.data.wt$plate)[4]==all.data.wt[,"plate"] ]="blue"
+
+
+res1<-PCA( all.data.wt, quali= quali.col ,  graph=F)
+
+plot( res1, choix="ind", label="none", habillage=quali.col , 
+      invisible="quali" )
+
+
+
+@
+
+
+<<pca12, eval=F, echo=F, include=F>>=
+
+#DIV, 
+quali.sup.vars<-c(1,4,6)
+all.data<-all.data[,-c(1,4)]
+
+col<-rep("blue", length(all.data$treatment))
+col[ grepl( "HOM", all.data$treatment ) ]="red"
+
+res1<-PCA( all.data, quali=4,  graph=F)
+plot( res1, choix="ind", label="none",
+      habillage=4  ,invisible="quali" )
+#plot( res1, choix="ind", label="none", habillage="ind"  ,invisible="quali" , col.hab = col )
+
+num.features=5
+combo3<-t( combn( setdiff(1:ncol(all.data.quant),quali.sup.vars) , 
+                 num.features, FUN = NULL, simplify = TRUE) )
+
+for ( i in 1:nrow(combo3) ){
+  cur.data<-all.data[,c( combo3[i, ], 4) ]
+  res1<-PCA( cur.data, quali=4,  graph=F)
+  plot( res1, choix="ind", label="none",
+      habillage=4  ,invisible="quali" )
+
+}
+
+
+
+
+
+@
+
+
+
+
+\section{Discussion}
+
+
+\section{Summary}
+In summary, the proposed methods will help determine which features are mostly responsible for differentiating WT and mutant wells.
+
+\section{Anticipated Results}
+I expect that a subset of features will reliably distinguish the WT from the mutant wells. MEA data is, however, highly variable, therefore I expect that a prediction rate above 75 percent will be unlikely. Should there not be a classification rate above 75 percent, then I expect that the data just has too much variability to be as reliable as wished. However, understanding that our ability to distinguish WT versus mutant wells is poor will be helpful to know as well.
+ happens?
+
+\section{Conclusion}
+The impact of this project will be especially helpful to understand the differences between mutant and WT wells.
+
+
+
+
+
+
+
+
+
+
+
+
+\end{document}
